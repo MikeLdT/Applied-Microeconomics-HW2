@@ -1,0 +1,558 @@
+---
+title: "Segunda Tarea de Microeconmetría Aplicada"
+author: "Miguel Lerdo de Tejada Flores"
+date: "`r format(Sys.Date(),  '%A %d, %B %Y' )`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+  pdf_document: default
+header-includes:
+- \usepackage{amsmath}
+- \usepackage[spanish,activeacute]{babel}
+- \decimalpoint
+- \usepackage[utf8]{inputenc}
+- \usepackage{fancyhdr}
+- \usepackage{geometry}
+- \usepackage{amsmath}
+- \usepackage{enumerate}
+- \usepackage{hyperref}
+- \usepackage{float}
+- \usepackage{multirow}
+- \usepackage{float}
+- \usepackage{placeins}
+- \usepackage[spanish,activeacute]{babel}
+- \decimalpoint
+- \usepackage{fancyhdr}
+- \usepackage{geometry}
+- \usepackage{amsmath}
+- \usepackage{enumerate}
+- \usepackage{hyperref}
+- \usepackage{float}
+- \usepackage{multirow}
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	fig.height = 4,
+	fig.width = 6,
+	message = FALSE,
+	warning = FALSE,
+	cache = TRUE,
+	digits = 4,
+	width = 48,
+	fig.align = 'center'
+	
+
+)
+
+knitr::knit_hooks$set(inline=function(x){
+  x <- sprintf("%1.4f",x)
+  paste(x,collapse = ", ")
+})
+
+
+```
+
+```{r, eval=F}
+#Correr solo una vez para quitar la notación científica
+options(	scipen =   999  )
+```
+
+```{r data, include=FALSE}
+#Librerias
+#--------------
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(broom)
+library(ggpubr)
+library(stargazer)
+library(knitr)
+library(RCT)
+library(quantreg)
+library(sandwich)
+library(kableExtra)
+library(htmltools)
+library(Greg)
+library(equatiomatic)
+
+
+#-----------------
+#-------------------
+
+#cargamos y limpiamos la base datos
+vacunas_f <- read.csv("vacunas_f.csv")
+```
+
+# Pregunta 1
+Iniciemos explorando la base de datos. Elabora una tabla con estadísticas descriptivas básicas para todas las variables de la base de datos. Incluye en tu tabla número de observaciones, media, desviación estándar, mínimo y máximo. [Tip de R: utiliza el comando _summary_ o _stargazer_.]
+
+```{r p1}
+x <- summary_statistics(vacunas_f,probs = c(0,0.1,0.5,0.9,1))
+x$std_dev <- sapply(vacunas_f[x$variable],sd,na.rm=T)
+x <- x %>% rename(min = "0", max = "1",median="0.5") 
+
+kable(x) %>%
+  kable_classic()
+
+```
+
+
+
+# Pregunta 2    
+Ahora analizaremos la relación entre el número de __vacunados diarios por millón de habitantes__ (__dvaxx\_per\_mill__) y el __ingreso personal per cápita__ (__inc\_pc__). 
+
+  a. Elabora un __scatterplot__ entre __dvaxx\_per\_mill__ (eje $Y$) y el logaritmo natural de __inc\_pc__ (eje $X$). Incluye en dicha gráfica la recta que se obtiene al realizar una estimación por MCO entre ambas variables. Reporta en formato de ecuación el resultado de la estimación del modelo e interpreta el coeficiente relevante. [Tip de R: Puedes realizar __scatterplots__ con _geom\_point_ y agregar el ajuste de MCO con _geom\_smooth(method="lm")_ de la librería _ggplot2_. Para realizar estimaciones por MCO (simples y múltiples) utiliza el comando _lm_.]
+    
+```{r 2a}
+reg_mco <- lm(dvaxx_per_mill~log(inc_pc),vacunas_f)
+
+ggplot(vacunas_f,aes(y=dvaxx_per_mill,x=log(inc_pc)))+
+  geom_point()+
+  theme_minimal()+
+  geom_smooth(method="lm",se=F)
+
+```
+    La ecuación estimada es $dvaxx\_per\_mill=\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco,type = "HC1")))[1]`)}{`r reg_mco$coefficients[1]`}+\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco,type = "HC1")))[2]`)}{`r reg_mco$coefficients[2]`}\;ln(inc\_pc)$.
+  
+  b. Considerando la especificación anterior, estima regresiones cuantílicas para los cuantiles 10, 50 y 90. Reporta los resultados de dichas regresiones en formato de ecuación, grafica en un diagrama de dispersión las tres regresiones cuantílicas y la regresión de MCO (la cual estimaste en el inciso anterior).
+    
+```{r 2b}
+reg <- rq(dvaxx_per_mill~log(inc_pc),tau=c(.1,.5,.9),vacunas_f)
+#req <- rq(dvaxx_per_mill~log(inc_pc),tau=.9,vacunas_f)
+
+alphas <-reg$coefficients[1,]
+betas <- reg$coefficients[2,]
+sum <- summary(reg,se="boot",cov=T)
+
+ggplot(vacunas_f,aes(y=dvaxx_per_mill,x=log(inc_pc)))+
+   geom_point()+
+   theme_minimal()+
+  geom_smooth(method="lm",se=F)+
+  geom_quantile(quantiles=c(.1,.5,.9),show.legend = T,aes(colour=as.factor(..quantile..),size=factor(..quantile..)))+
+  scale_color_manual(values=c("red","purple","green")) +
+  scale_size_manual(values=c(1,2,1)) +
+  labs(colour="Quantile")+
+  guides(colour=guide_legend(reverse=TRUE), size=FALSE)
+  
+
+#,aes(colour=as.factor(....))
+  
+  
+```
+
+```{r, eval=F}
+ 
+```
+La regresión mediana tiene ecuación $dvaxx\_per\_mill=\underset{(`r sqrt(sum[[2]][["cov"]][1,1])`)}{`r alphas[2]`}+\underset{(`r sqrt(sum[[2]][["cov"]][2,2])`)}{`r betas[2]`}\;inc\_pc$, la del cuantil 0.1 $dvaxx\_per\_mill=\underset{(`r sqrt(sum[[1]][["cov"]][1,1])`)}{`r alphas[1]`}+\underset{(`r sqrt(sum[[1]][["cov"]][2,2])`)}{`r betas[1]`}\;inc\_pc$ y la de cuantil 0.9 es $dvaxx\_per\_mill=\underset{(`r sqrt(sum[[3]][["cov"]][1,1])`)}{`r alphas[3]`}+\underset{(`r sqrt(sum[[3]][["cov"]][2,2])`)}{`r betas[3]`}\;inc\_pc$.
+
+    
+  c. Recordemos que las regresiones cuantílicas nos predicen el valor del cuantil $Q$ de la variable dependiente, condicional en los valores de $X$. Consideremos un indicador común de desigualdad: el _ratio_ del cuantil 90 sobre el cuantil 10.^[Este indicador señala cuántas veces mayor es el valor del cuantil $90$ respecto al $10$.] Utilizando los coeficientes del inciso anterior calcula la diferencia de este ratio entre dos valores específicos de __inc\_pc__: $45,000$ y $60,000$. 
+  
+  
+```{r 2c}
+pred <- predict(reg,data.frame(inc_pc=c(45000,60000)))
+```
+  
+  En el caso de $inc\_pc=45,000$, el ratio toma el valor `r pred[1,3]/pred[1,1]` y en el caso de $inc\_pc=60,00$ toma el valor `r pred[2,3]/pred[2,1]` y la diferencia es `r (pred[1,3]/pred[1,1])-(pred[2,3]/pred[2,1])`.
+  
+  
+  d. Utilizando bootstrap (500 simulaciones) calcula un intervalo de confianza de $90\%$ para la respuesta del inciso anterior. [Tip: para cada simulación debes repetir las regresiones cuantílicas relevantes.]
+  
+```{r 2d}
+vacunas2 <- map(1:500,
+                function(x){
+                  set.seed(x)
+                  vacunas_f %>%
+                    slice_sample(n=51,replace=T)
+                })
+pred <- map(vacunas2,~predict(rq(dvaxx_per_mill~log(inc_pc),tau=c(.1,.9),.)),data.frame(inc_pc=c(45000,60000)))
+inequality <- map_dbl(pred,~.[1,2]/.[1,1]-.[2,2]/.[2,1])
+pbarra <- mean(inequality)
+pbarra_var <- var(inequality)
+#IC1 <- c((pbarra)-(qnorm(0.95))*sqrt(pbarra_var),(pbarra)+(qnorm(0.95))*sqrt(pbarra_var))
+ggplot(data.frame(inequality),aes(x=inequality))+
+  geom_density()+
+  theme_minimal()
+```
+    
+  Parece que suponer normalidad es un supuesto muy fuerte. Entonces presento el intervalo empírico. El intervalo deseado es (`r quantile(inequality,0.05)`,`r quantile(inequality,0.95)`).
+  
+  
+  e. Por último, imagina que quisieras utilizar tu resultado de la estimación del inciso (a) para predecir __dvaxx\_per\_mill__ para México. Lleva a cabo este ejercicio y calcula el resultado de la predicción contra el valor verdadero de __dvaxx\_per\_mill__ para México. Enumera algunas razones para explicar por qué predecir el valor de México con el resultado de (a) pudiera no ser adecuado. 
+        
+```{r 2e}
+
+
+
+```
+    
+  De acuerdo al [Banco Mundial](https://datos.bancomundial.org/indicador/NY.GDP.PCAP.CD?locations=MX), el ingreso per cápita de México a Diciembre 2019 fue de 9946.034 dólares. Entonces la predicción utilizndo este dato sería $\widehat{dvaxx\_per\_mill}=$ `r predict(reg_mco,newdata=list(inc_pc=9946.034))` mientras que el valor verdadero a la fecha de corte (a partir de [Our world in data](https://ourworldindata.org/covid-vaccinations?country=~MEX)) es $dvaxx\_per\_mill=$821.
+
+  Predecir el valor de México con la estimación de Estados Unidos puede no ser adecuado ya de entrada en la propia especificación falta controlar por otras variables (ubicación geográfica, urbanización etc) es decir no tiene tanta validez interna. Además, el contexto en el que se aplican las vacunas en México es muy distinto a los estados de Estados Unidos (llegada de vacunas, restricciones de higiene, etc) por lo que tampoco tendría mucha validez externa aunque sí tuviera externa.
+
+
+ 
+    
+# Pregunta 3 
+
+Ahora compararemos dos modelos alternativos de MCO para explicar a __dvaxx\_per\_mill__: (i) utilizando solo __inc\_pc__ (sin logaritmo) como variable explicativa y (ii) utilizando un polinomio de segundo grado de __inc\_pc__.
+    
+
+  a. Elabora un __scatterplot__ entre __dvaxx\_per\_mill__ y __inc\_pc__ agregando el resultado de las dos estimaciones. Reporta ambas estimaciones en formato de ecuación. Visualmente, >cuál de las dos alternativas crees que es mejor para modelar a __dvaxx\_per\_mill__? 
+  
+  __Disclaimer:__ para esttimar la especificación cuadrática utilicé el código:
+```{r, eval=T}
+reg_mco <- lm(dvaxx_per_mill~inc_pc,vacunas_f)
+```
+  En lugar de crear una nueva variable que fuera $inc\_pc^2$, ya que me evito algunos problemas de correlación y optimizo memoria.
+  
+```{r}
+
+reg_mco2 <- lm(dvaxx_per_mill ~ poly(inc_pc,2),vacunas_f)
+
+ggplot(vacunas_f,aes(y=dvaxx_per_mill,x=inc_pc))+
+  geom_point()+
+  theme_minimal()+
+  geom_smooth(method="lm",se=F,aes(colour="lineal"))+
+  geom_smooth(method="lm",formula=y~poly(x,2),se=F,aes(colour="cuadratica"))+
+  scale_color_manual(values=c(lineal="red",cuadratica="blue")) +
+  scale_size_manual(values=c(1,1)) +
+  labs(colour="Regresiones")+
+  guides(colour=guide_legend(reverse=TRUE), size=FALSE)
+```
+    
+  Las ecuaciones son $dvaxx\_per\_mill=\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco,type = "HC1")))[1]`)}{`r reg_mco$coefficients[1]`}+\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco,type = "HC1")))[2]`)}{`r reg_mco$coefficients[2]`}\;inc\_pc$ para la estimación lineal y $dvaxx\_per\_mill=\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco2,type = "HC1")))[1]`)}{`r reg_mco2$coefficients[1]`}+\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco2,type = "HC1")))[2]`)}{`r reg_mco2$coefficients[2]`}\;inc\_pc+\underset{(`r sqrt(diag(sandwich::vcovHC(reg_mco2,type = "HC1")))[3]`)}{`r reg_mco2$coefficients[3]`}\;inc\_pc^2$ para la cuadrática.
+  
+   
+      
+  b. Para comparar a ambos modelos llevemos a cabo lo siguiente: calcula los residuales después de llevar a cabo la estimación, elévalos al cuadrado (que es lo que hacemos en la minimización de OLS) y promédialos. Este es un estadístico que comúnmente se reporta con las regresiones y conocémos como _Mean Squarred Error_ (MSE).
+  
+  El MSE del primer modelo es `r mean(reg_mco$residuals^2)` y el del segundo es `r mean(reg_mco2$residuals^2)`.
+  
+  c. Como no sabemos si estos promedios son pequeños o grandes, quisiéramos compararlos contra la desviación estándar de __dvaxx\_per\_mill__, dado que los errores viven en el mismo eje que $Y$. Pero como calculamos los errores al cuadrado, los compararemos contra el cuadrado de la desviación estándar, es decir, la varianza de __dvaxx\_per\_mill__ [Ojo, al calcular esta varianza divide entre $N$ en vez de $N-1$ como típicamente hacemos en el calculo de la varianza muestral.]. Reporta el ratio de MSE entre la varianza de __dvaxx\_per\_mill__ para ambas estimaciones.
+  
+  El ratio del primer modelo es `r mean(reg_mco$residuals^2)/(((length(vacunas_f$dvaxx_per_mill)-1)/length(vacunas_f$dvaxx_per_mill))*var(vacunas_f$dvaxx_per_mill))` y el del segundo es `r mean(reg_mco2$residuals^2)/(((length(vacunas_f$dvaxx_per_mill)-1)/length(vacunas_f$dvaxx_per_mill))*var(vacunas_f$dvaxx_per_mill))`.
+  
+  d. Llevando a cabo el inciso anterior, indica qué estadístico ampliamente conocido en las regresiones haz derivado implícitamente si calculas: 
+        $$
+            Estad = 1-\frac{MSE}{Var(dvaxx\_per\_mill)}
+        $$
+  La famosa $R^2$.
+  
+  e. Es casualidad que este estadístico sea mayor para la especificación cuadrática? >Cuál es el valor que obtendrías para este estadístico si llevaras a cabo una regresión de __dvaxx\_per\_mill__ solo contra la constante ($Y_i=\beta_0$)? Basado en tus resultados anteriores puedes explicar por qué?
+  
+  En ese caso $\beta_0=\mathbb{E}[Y]\;\;\implies\;\;MSE=\sum_{i=1}^n(y_i-\mathbb{E}[Y])^2=\mathbb{V}[Y]\;\;\therefore\;\;R^2=0$. 
+  
+  Por lo que podemos intuir que la $R^2$ es creciente en el número de variables independientes.
+    
+    
+# Pregunta 4
+Ahora analizaremos diferentes mediciones de vacunación y su relación con otras variables económicas, sociodemográficas, políticas y sanitarias. Para esto, deberás realizar las estimaciones que se incluyen en el Cuadro _tab\_regs_, que se encuentra al final del documento^[Para realizar la estimación de la columna (5) deberás crear la variable __dst\_sp__. Dicha variable es una dummy que toma el valor de 1 si la variable __sh\_vaxx__ es mayor a la mediana.]. _Ojo:_ Las líneas horizontales en algunas variables (---) significan que NO debes incluir esta variable en la estimación de dicha columna. Utiliza errores heterocedásticos y agrega los asteriscos que indiquen nivel de significancia: * 10\%, ** 5\% y *** 1\%. [Tip de R: Para estimar errores heterocedásticos, utiliza el comando _vcovHC_ de la librería _sandwich_. En dicho comando deberás indicar el nombre con el que guardaste tu estimación _lm_ y errores del tipo _HC1_ (i.e. _vcovHC(nombre\_modelo,type='HC1')_). Para crear tablas con resultados de regresiones puedes utilizar el comando _stargazer_ de la librería homónima.]  
+
+```{r 4,include=F}
+vacunas_f <- vacunas_f %>%
+  mutate(fat_rate=deaths_7d/cases_7d)
+
+
+reg1 <- lm(log(dvaxx_per_mill)~stad+log(inc_pc)+fat_rate+hosp_curr+sh_65old+dem,vacunas_f)
+reg2 <- lm(dvaxx_per_mill~stad+log(inc_pc)+fat_rate+hosp_curr+sh_copd+sh_afro,vacunas_f)
+reg3 <- lm(sh_vaxx~stad+log(inc_pc)+sh_65old+log(health_emp)+dem,vacunas_f)
+reg4 <- lm(sh_vaxx~stad+log(inc_pc)+sh_65old+sh_afro+stad*log(inc_pc),vacunas_f)
+reg5 <- lm(dst_sp~stad+log(inc_pc)+fat_rate+sh_65old+dem,vacunas_f %>% mutate(dst_sp=ifelse(sh_vaxx>median(sh_vaxx),1,0)))
+
+robust <- lapply(list(reg1,reg2,reg3,reg4,reg5),function(x){sqrt(diag(vcovHC(x,type = "HC1")))})
+
+stargazer(reg1,reg2,reg3,reg4,reg5,se=robust,type = "html",out="regTable.html")
+
+
+
+```
+```{r 4.1, results="hide",header=FALSE, results='asis'}
+includeHTML("regTable.html")
+```
+
+
+    
+# Pregunta 5 
+Considerando los resultados del Cuadro 2, interpreta de la forma más específica posible los siguientes coeficientes. (Nota: lleva a cabo la interpretación del valor estimado de los coeficientes a pesar de que resulten no significativos.):
+    
+  a. __stad__ en la columna (1).
+  
+  -  Caeterias paribus,el uso de estadios deportivos como centros de vacunación está asociado con un aumento de 0.6\% en  la cantidad de personas vacunadas diariamente por cada millón de habitantes (a la fecha de corte).
+  
+  b. __fat\_rate__ en la columna (1).
+  
+  -  Caeterias paribus,un aumento de un punto porcentual en la tasa de fatalidad está asociado con un aumento de 2.494\% en  la cantidad de personas vacunadas diariamente por cada millón de habitantes (a la fecha de corte).
+  
+  c. __hosp\_curr__ en la columna (2).
+  
+  -  Caeterias paribus,un paciente más hospitalizado por COVID está asociado a una disminución de 0.222 en  la cantidad de personas vacunadas diariamente por cada millón de habitantes (a la fecha de corte).
+  
+  d. __sh\_copd__ en la columna (2).
+  
+  -   Caeterias paribus,un aumento de un punto porcentual en el porcentaje de adultos con problemas pulmonares está asociado con una disminución de 77.180 en  la cantidad de personas vacunadas diariamente por cada millón de habitantes (a la fecha de corte).
+  
+  e. __ln(inc\_pc)__ en la columna (3).
+  
+  -   Caeterias paribus,un aumento de 1\% en el ingreso personal per cápita está asociado con un aumento de .01369 puntos porcentuales en el porcentaje de la población del estado que ha recibido el total de dosis de la vacuna.
+  
+  f. __log(health\_emp)__ en la columna (3).
+  
+  -   Caeterias paribus,un aumento de 1\% en la cantidad de trabajadores del sector salud está asociado con una disminución de 0.0086 puntos porcentuales en el porcentaje de la población del estado que ha recibido el total de dosis de la vacuna.
+  
+  g. __stad__ en la columna (5).
+  
+  -   Caeterias paribus,el uso de estadios deportivos como centros de vacunación está asociado con una disminución de 0.108 en la probabilidad de que el porcentaje de la población del estado que ha recibido el total de dosis de la vacuna (a la fecha de corte) sea mayor que la mediana.
+  
+  h. __log(inc\_pc)__ en la columna (5).
+  
+  -   Caeterias paribus,un aumento de 1\% en el ingreso personal per cápita está asociado con un aumento de 0.01044 en la probabilidad de que el porcentaje de la población del estado que ha recibido el total de dosis de la vacuna (a la fecha de corte) sea mayor que la mediana.
+  
+  i. __sh\_old__ en la columna (5).
+  
+  -   Caeterias paribus,un aumento de un punto porcentual en el porcentaje población con 65 años o más está asociado con un aumento de 0.047 en la probabilidad de que el porcentaje de la población del estado que ha recibido el total de dosis de la vacuna (a la fecha de corte) sea mayor que la mediana.
+
+
+# Pregunta 6
+__Derivada parcial, derivada total y partial-out.__ En los siguientes incisos nos enfocaremos en la diferencia del promedio de __sh\_vaxx__ entre los estados gobernados por un demócrata ($dem=1$) y los estados gobernados por un republicano ($dem=0$). Compararemos el valor estimado, así como intervalos de confianza de $90\%$ 
+    
+  a. Empieza por interpretar el valor estimado de __dem__ que obtienes en la especificación (3).^[Siempre que hablemos de la especificación (3) en este ejercicio, estamos haciendo referencia a la tercera columna del Cuadro 2.] Utilizando los resultados de la estimación calcula el intervalo de confianza de $90\%$.
+  
+  Que un estado sea demócrata está asociado a un aumento de 0.208 puntos porcentuales en el porcentaje de la población del estado que ha recibido el total de dosis de la vacuna (a la fecha de corte). 
+  
+  
+  El intervalo es (`r Greg::confint_robust(reg3,parm="dem",level=0.9,HC_type="HC1")`).
+  
+  b. Para generar el estimador más simple calcula la media de __sh\_vaxx__ para los estados con $dem=0$ y $dem=1$ y reporta la diferencia. Muestra cómo podrías haber obtenido ese mismo valor utilizando una regresión simple. Deberás estimar la regresión simple correspondiente y reportarla con formato de ecuación. Utilizando el resultado de la regresión reporta también el intervalo de confianza de $90\%$.
+  
+  La media para estados con $dem=0$ es `r mean(vacunas_f[vacunas_f$dem==0,]$sh_vaxx,na.rm=T)` mientras que para los estados con $dem=1$ es `r mean(vacunas_f[vacunas_f$dem==1,]$sh_vaxx,na.rm=T)`. La diferencia es `r mean(vacunas_f[vacunas_f$dem==1,]$sh_vaxx,na.rm=T)-mean(vacunas_f[vacunas_f$dem==0,]$sh_vaxx,na.rm=T)`. 
+  
+```{r 6b}
+reg_dem <- lm(sh_vaxx~dem,vacunas_f)
+ICb <- Greg::confint_robust(reg_dem,parm="dem",level=0.9,HC_type="HC1")
+```
+  
+  
+  Si estimamos la regresión $sh\_vaxx=\beta_0+\beta_1dem$ tenemos que $\mathbb{E}[sh\_vaxx|dem=1]-\mathbb{E}[sh\_vaxx|dem=0]=\beta_1$, por lo que al estimar dicha especificación obetemos que la diferencia en medias es $\beta_1=$`r reg_dem$coefficients[2]`. La ecuación estimada es  $sh\_vaxx=\underset{(`r sqrt(diag(sandwich::vcovHC(reg_dem,type = "HC1")))[1]`)}{`r reg_dem$coefficients[1]`}+\underset{(`r sqrt(diag(sandwich::vcovHC(reg_dem,type = "HC1")))[2]`)}{`r reg_dem$coefficients[2]`}\;dem$. El intervalo de confianza correspodiente es (`r ICb`).
+  
+  c. __Derivada total.__ Para cada una de las variables que utilizamos como controles en la especificación (3) calcula su media para los grupos $dem=0$ y $dem=1$. Utilizando estos valores y el resultado de la especificación (3), calcula el valor de __sh\_vaxx__ que el modelo predice para $dem=0$ y $dem=1$. Reporta esta diferencia y calcula el intervalo de confianza de $90\%$.
+  
+```{r 6c}
+
+medias <- as.data.frame(sapply(list("stad","inc_pc","sh_65old","health_emp"),function(x){c(mean(vacunas_f %>% filter(dem==0) %>% select(x) %>% unlist(),na.rm=T),mean(vacunas_f %>% filter(dem==1) %>% select(x) %>% unlist(),na.rm = T))}))
+colnames(medias) <- list("stad","inc_pc","sh_65old","health_emp")
+rownames(medias) <- list("dem=0","dem=1")
+
+vacunas2 <- map(1:1000,
+                function(x){
+                  set.seed(x)
+                  vacunas_f %>%
+                    slice_sample(n=51,replace=T)
+                })
+pred0 <- map(vacunas2,~predict(lm(formula = sh_vaxx ~ stad + log(inc_pc) + sh_65old + log(health_emp) + 
+    dem, data = .),newdata=cbind(medias[1,],dem=0)))
+pred1 <-  map(vacunas2,~predict(lm(formula = sh_vaxx ~ stad + log(inc_pc) + sh_65old + log(health_emp) + 
+    dem, data = .),newdata=cbind(medias[2,],dem=1)))
+dif1 <- as.numeric(pred1)-as.numeric(pred0)
+
+pbarra <- mean(dif1)
+pbarra_var <- var(dif1)
+IC1boot <- c((pbarra)-(qnorm(0.95))*sqrt(pbarra_var),(pbarra)+(qnorm(0.95))*sqrt(pbarra_var))
+
+```
+
+  Las medias toman los valores 
+```{r} 
+kable(medias,row.names = T,digits = 4)
+```
+  
+  El valor predecido para $dem=0$ es `r predict(reg3,newdata=cbind(medias[1,],dem=0))` y para $dem=1$ es `r predict(reg3,newdata=cbind(medias[2,],dem=1))`. La diferencia es ``r predict(reg3,newdata=cbind(medias[2,],dem=1))- predict(reg3,newdata=cbind(medias[1,],dem=0))`. 
+  
+  Para construir el intervalo de confianza notemos que la respuesta media 
+  $$\mathbb{E}[sh\_vaxx|dem=1]-\mathbb{E}[sh\_vaxx|dem=0]$$
+  Es igual a:
+  
+  $$=\left(\begin{array}{l} \beta_0 & \beta_1 & \beta_2 & \beta_3 & \beta_4 & \beta_5 \end{array}\right)\left(\begin{array}{l} 0\\\mathbb{E}_n[stad|dem=1]-\mathbb{E}_n[stad|dem=0] \\ \mathbb{E}_n[log(inc\_pc)|dem=1]-\mathbb{E}_n[log(inc\_pc)|dem=0] \\ \mathbb{E}_n[sh\_65old|dem=1]-\mathbb{E}_n[sh\_65old|dem=0] \\ \mathbb{E}_n[log(health\_emp)|dem=1]-\mathbb{E}_n[log(health\_emp)|dem=0]  \\ 1\end{array}\right)=\overline{\beta}\alpha$$
+  
+  Entonces sabemos que: 
+  $$\hat{\beta}\alpha\sim\mathcal{N}(\overline{\beta}\alpha,\alpha'\Sigma\alpha),\;\;\Sigma=\mathbb{E}(U^2_iX_iX′_i)$$
+  Por tanto nuestro intervalo es: 
+  
+
+  
+  
+  $$(\hat{\beta}\alpha-\Phi^{-1}(0.95)*\sqrt{\alpha'\hat{\Sigma}\alpha}\;,\;\hat{\beta}\alpha+\Phi^{-1}(0.95)*\sqrt{\alpha'\hat{\Sigma}\alpha})$$
+  
+  
+```{r 6c.2}
+alf <- c(0,t(as.numeric(c(medias[2,1],log(medias[2,2]),medias[2,3],log(medias[2,4]))))-t(as.numeric(c(medias[1,1],log(medias[1,2]),medias[1,3],log(medias[1,4])))),1)
+
+```
+
+```{r}
+IC1 <- c(reg3$coefficients%*%(alf)-qnorm(0.95)*sqrt(t(alf)%*%sandwich::vcovHC(reg3,type="HC1")%*%alf),reg3$coefficients%*%(alf)+qnorm(0.95)*sqrt(t(alf)%*%sandwich::vcovHC(reg3,type="HC1")%*%alf))
+```
+  
+  Que numéricamente toma el valor (`r c(reg3$coefficients%*%(alf)-qnorm(0.95)*sqrt(t(alf)%*%sandwich::vcovHC(reg3,type="HC1")%*%alf),reg3$coefficients%*%(alf)+qnorm(0.95)*sqrt(t(alf)%*%sandwich::vcovHC(reg3,type="HC1")%*%alf))`).
+  
+  También reporto el intervalo obtenido por el método bootstrap. Haciendo mil remuestreos aleatorios obtengo la siguiente distribución para la diferencia de las predicciones: 
+```{r}
+ggplot(data.frame(dif1),aes(x=dif1))+
+  geom_density()+
+  theme_minimal()
+```
+  Notemos que suponer normalidad no parece un problema, por lo que el intervalo deseado es (`r IC1boot`).
+  
+  d. Haz dos regresiones por separado. En cada una de ellas utiliza los mismos controles que la especificación (3). La primera regresión llévala a cabo sólo con las observaciones de $dem=0$ y la segunda solo con las observaciones de $dem=1$. Utilizando los valores promedio que calculaste en el inciso anterior para los controles vuelve a llevar a cabo la predicción de __sh\_vaxx__ para $dem=0$ y $dem=1$. Nuevamente reporta la diferencia y un intervalo de confianza de $90\%$.
+  
+```{r 6d}
+reg0 <- lm(formula = sh_vaxx ~ stad + log(inc_pc) + sh_65old + log(health_emp) , data = vacunas_f %>% filter(dem==0))
+reg1 <- lm(formula = sh_vaxx ~ stad + log(inc_pc) + sh_65old + log(health_emp) , data = vacunas_f %>% filter(dem==1))
+
+#pred0 <- predict(reg0,newdata=medias[1,])
+#pred1 <- predict(reg1,newdata=medias[2,])
+
+vacunas2 <- map(1:1000,
+                function(x){
+                  set.seed(x)
+                  vacunas_f %>%
+                    slice_sample(n=51,replace=T)
+                })
+pred0 <- map(vacunas2,~predict(lm(formula = sh_vaxx ~ stad + log(inc_pc) + sh_65old + log(health_emp) , data= filter(.,dem==0)),newdata=medias[1,]))
+pred1 <-  map(vacunas2,~predict(lm(formula = sh_vaxx ~ stad + log(inc_pc) + sh_65old + log(health_emp) , data = filter(.,dem==1)),newdata=medias[2,]))
+dif1 <- as.numeric(pred1)-as.numeric(pred0)
+
+pbarra <- mean(dif1)
+pbarra_var <- var(dif1)
+IC2boot <- c((pbarra)-(qnorm(0.95))*sqrt(pbarra_var),(pbarra)+(qnorm(0.95))*sqrt(pbarra_var))
+
+
+
+
+```
+  
+  El valor predecido para $dem=0$ es `r predict(reg0,newdata=medias[1,])` y para $dem=1$ es `r predict(reg1,newdata=medias[2,])`. La diferencia es `r predict(reg1,newdata=medias[2,])-predict(reg0,newdata=medias[1,])`. 
+  
+  Veamos el intervalo de manera analítica. La respuesta media 
+  $$\mathbb{E}[sh\_vaxx^{dem=1}]-\mathbb{E}[sh\_vaxx^{dem=0}]$$
+  Es igual a:
+  
+  $$=\left(\begin{array}{l} \beta_1^{dem=1} & \beta_2^{dem=1} & \beta_3^{dem=1} & \beta_4^{dem=1} \end{array}\right)\left(\begin{array}{l} \mathbb{E}_n[stad^{dem=1}] \\ \mathbb{E}_n[log(inc\_pc)^{dem=1}] \\ \mathbb{E}_n[sh\_65old^{dem=1}] \\ \mathbb{E}_n[log(health\_emp)^{dem=1}]\end{array}\right)$$
+  $$-\left(\begin{array}{l}\beta_1^{dem=0} & \beta_2^{dem=0} & \beta_3^{dem=0} & \beta_4^{dem=0}\end{array}\right)\left(\begin{array}{l}\mathbb{E}_n[stad^{dem=0}] \\ \mathbb{E}_n[log(inc\_pc)^{dem=0}] \\ \mathbb{E}_n[sh\_65old^{dem=0}] \\ \mathbb{E}_n[log(health\_emp)^{dem=0}]\end{array}\right)$$
+  Que de manera más simple se ve:
+  $$=\overline{\beta^{dem=1}}\alpha^{dem=1}-\overline{\beta^{dem=0}}\alpha^{dem=0}$$
+  Pero cuya varianza es:
+  $$Var(\overline{\beta^{dem=1}}\alpha^{dem=1}-\overline{\beta^{dem=0}}\alpha^{dem=0})=Var(\overline{\beta^{dem=1}}\alpha^{dem=1})+Var(\overline{\beta^{dem=0}}\alpha^{dem=0})-2\underline{Cov(\overline{\beta^{dem=1}},\overline{\beta^{dem=0}})}$$
+  El último término subrayado es muy difícil de estimar con las herramientas de clase, por lo que mejor voy a reportar únicamente el intervalo por el método bootstrap.
+```{r}
+ggplot(data.frame(dif1),aes(x=dif1))+
+  geom_density()+
+  theme_minimal()
+```
+  De nuevo la normalidad no parece ser un problema, por lo que el intervalo es (`r IC2boot`).
+  
+  
+  e. __Interacciones.__ Repite la estimación de la especificación (3) pero ahora agregando las interacciones de cada uno de los controles con la variable __dem__ (i.e. una interacción sería $stad*dem$, otra sería $\log{(inc\_pc)}*dem$ y asi sucesivamente para todos los controles). Nuevamente utilizando los valores promedio para los controles lleva a cabo la predicción de __sh\_vaxx__ para $dem=0$ y $dem=1$ y reporta el intervalo de confianza de $90\%$.
+```{r 6e}
+
+reg_e <- lm(formula = sh_vaxx ~  dem*stad + dem*log(inc_pc) + dem*sh_65old + dem*log(health_emp), data = vacunas_f %>%  select(sh_vaxx, stad , inc_pc , sh_65old , health_emp , 
+    dem) )
+
+
+#stad + log(inc_pc) + sh_65old + log(health_emp) +  dem +
+vacunas2 <- map(1:1000,
+                function(x){
+                  set.seed(x)
+                  vacunas_f %>%
+                    select(sh_vaxx, stad , inc_pc , sh_65old , health_emp , dem) %>%
+                    slice_sample(n=51,replace=T)
+                })
+pred0 <- map(vacunas2,~predict(lm(formula = sh_vaxx ~  dem*stad + dem*log(inc_pc) + dem*sh_65old + dem*log(health_emp), data = select(.,sh_vaxx, stad , inc_pc , sh_65old , health_emp , dem)),newdata=cbind(dem=0,medias[1,])))
+pred1 <- map(vacunas2,~predict(lm(formula = sh_vaxx ~  dem*stad + dem*log(inc_pc) + dem*sh_65old + dem*log(health_emp), data = select(.,sh_vaxx, stad , inc_pc , sh_65old , health_emp , 
+    dem)),newdata=cbind(dem=1,medias[2,])))
+dif1 <- as.numeric(pred1)-as.numeric(pred0)
+
+pbarra <- mean(dif1)
+pbarra_var <- var(dif1)
+IC3boot <- c((pbarra)-(qnorm(0.95))*sqrt(pbarra_var),(pbarra)+(qnorm(0.95))*sqrt(pbarra_var))
+
+
+
+```
+  El valor predecido para $dem=0$ es `r predict(reg_e,newdata=cbind(medias[1,],dem=0))` y para $dem=1$ es `r predict(reg_e,newdata=cbind(medias[2,],dem=1))`. La diferencia es ``r predict(reg_e,newdata=cbind(medias[2,],dem=1))- predict(reg_e,newdata=cbind(medias[1,],dem=0))`. 
+  
+  Para construir el intervalo de confianza notemos que la respuesta media 
+  $$\mathbb{E}[sh\_vaxx|dem=1]-\mathbb{E}[sh\_vaxx|dem=0]$$
+  Es igual a:
+  
+  $$=\left(\begin{array}{l} \beta_0 & \beta_1 & \beta_2 & \beta_3 & \beta_4 & \beta_5 & \beta_6 & \beta_7 \end{array}\right)\left(\begin{array}{l}  \\ 0 \\ 1\\ \mathbb{E}_n[stad|dem=1]-\mathbb{E}_n[stad|dem=0] \\ \mathbb{E}_n[log(inc\_pc)|dem=1]-\mathbb{E}_n[log(inc\_pc)|dem=0] \\ \mathbb{E}_n[sh\_65old|dem=1]-\mathbb{E}_n[sh\_65old|dem=0] \\ \mathbb{E}_n[log(health\_emp)|dem=1]-\mathbb{E}_n[log(health\_emp)|dem=0]  \\ \mathbb{E}_n[dem*stad|dem=1]\\\mathbb{E}_n[dem*log(inc\_pc)|dem=1]\\\mathbb{E}_n[dem*sh\_65old|dem=1] \\\mathbb{E}_n[dem*log(health\_emp)|dem=1]\end{array}\right)=\overline{\beta}\alpha$$
+  
+  Entonces sabemos que: 
+  $$\hat{\beta}\alpha\sim\mathcal{N}(\overline{\beta}\alpha,\alpha'\Sigma\alpha),\;\;\Sigma=\mathbb{E}(U^2_iX_iX′_i)$$
+  Por tanto nuestro intervalo es: 
+  
+  $$(\hat{\beta}\alpha-\Phi^{-1}(0.95)*\sqrt{\alpha'\hat{\Sigma}\alpha}\;,\;\hat{\beta}\alpha+\Phi^{-1}(0.95)*\sqrt{\alpha'\hat{\Sigma}\alpha})$$
+```{r 6e.2}
+alf_e <- c(0,1,t(as.numeric(c(medias[2,1],log(medias[2,2]),medias[2,3],log(medias[2,4]))))-t(as.numeric(c(medias[1,1],log(medias[1,2]),medias[1,3],log(medias[1,4])))),as.numeric(c(medias[2,1],log(medias[2,2]),medias[2,3],log(medias[2,4]))))
+```
+ 
+```{r}
+IC3 <- c(reg_e$coefficients%*%(alf_e)-qnorm(0.95)*sqrt(t(alf_e)%*%sandwich::vcovHC(reg_e,type="HC1")%*%alf_e),reg_e$coefficients%*%(alf_e)+qnorm(0.95)*sqrt(t(alf_e)%*%sandwich::vcovHC(reg_e,type="HC1")%*%alf_e))
+```
+ 
+  
+  Que numéricamente toma el valor (`r c(reg_e$coefficients%*%(alf_e)-qnorm(0.95)*sqrt(t(alf_e)%*%sandwich::vcovHC(reg_e,type="HC1")%*%alf_e),reg_e$coefficients%*%(alf_e)+qnorm(0.95)*sqrt(t(alf_e)%*%sandwich::vcovHC(reg_e,type="HC1")%*%alf_e))`).
+  
+  También reporto el intervalo obtenido mediante bootstrap. 
+  
+```{r}
+ggplot(data.frame(dif1),aes(x=dif1))+
+  geom_density()+
+  theme_minimal()
+```
+  
+  Nuevamente suponiendo normalidad, el intervalo deseado es (`r IC3boot`).
+  
+  f. __Partial-out.__ Lleva a cabo los siguientes pasos: (i) realiza una estimación de $dem$ (como variable dependiente) contra todos los controles y repórtala con formato de ecuación; (ii) utilizando los resultados de esta regresión obten los residuales; (iii) lleva a cabo una regresión simple de __sh\_vaxx__ contra los residuales que obtuviste en el paso anterior y repórtala con formato de ecuación. >Qué valor de los anteriores que habías calculado obtuviste?
+  
+```{r 6f}
+
+reg_dem <- lm(formula = dem ~ stad + log(inc_pc) + sh_65old + log(health_emp), data = vacunas_f)
+reg_resi <- lm(sh_vaxx~residuals,data=vacunas_f %>% filter(!is.na(dem)) %>% select(sh_vaxx) %>% mutate(residuals=reg_dem$residuals))
+
+```
+  La ecuación estimada es $sh\_vaxx=\underset{(`r sqrt(diag(sandwich::vcovHC(reg_resi,type = "HC1")))[1]`)}{`r reg_resi$coefficients[1]`}+\underset{(`r sqrt(diag(sandwich::vcovHC(reg_resi,type = "HC1")))[2]`)}{`r reg_resi$coefficients[2]`}\;residuales$. Estoy estimando el coeficiente de $dem$ en la especificación 3. La intuición detrás es que los residuales de 
+```{r, results='asis'} 
+equatiomatic::extract_eq(reg_dem)
+``` 
+contienen toda la información que afecta a $dem$ que no proviene de los controles i.e. por construcción los residuales son ortogonales a los controles. Entonces al estimar 
+```{r,results='asis'} 
+equatiomatic::extract_eq(reg_resi)
+``` 
+estamos encontrando el efecto de $dem$ en $sh\_vaxx$ controlando implícitamente por las otras variables de la especificación 3.
+  
+  g. Para finalizar lleva a cabo una gráfica en la que compares los distintos intervalos de confianza que obtuviste para la diferencia del promedio de __sh\_vaxx__. Imagina que trabajas en un periódico muy prestigiado y que al ver tus cálculos, tu jefe te pregunta cuál de ellos deben reportar en una noticia que están por publicar. >Cuál de estas le sugerirías y por qué? Indica qué detalles técnicos econométricos debes reportar junto con el cálculo en la nota periodística para evitar meterte en problemas y que te vayan a acusar de malversar información o, peor aún, que vayan a denunciar a tu periódico por publicar cosas falsas y pierdas tu trabajo.  
+  
+```{r 6g}
+ggplot(as.data.frame(dif1),aes(x=dif1))+
+  geom_histogram(color="darkred",fill="salmon",bins=33)+xlab("diferencia sh_vaxx")+
+  geom_errorbarh(aes(xmin=ICb[1],xmax=ICb[2],y=5,color="bRobusto"),size=2,height=3.5)+
+  geom_errorbarh(aes(xmin=IC1[1],xmax=IC1[2],y=20,color="cAnalitico"),size=2,height=3.5)+
+  geom_errorbarh(aes(xmin=IC1boot[1],xmax=IC1[2],y=35,color="cBootstrap"),size=2,height=3.5)+
+  geom_errorbarh(aes(xmin=IC2boot[1],xmax=IC2boot[2],y=60,color="dBootstrap"),size=2,height=3.5)+
+  geom_errorbarh(aes(xmin=IC3[1],xmax=IC3[2],y=75,color="eAnalitico"),size=2,height=3.5)+
+  geom_errorbarh(aes(xmin=IC3[1],xmax=IC3[2],y=90,color="eBootstrap"),size=2,height=3.5)+
+  scale_color_manual(values=c(bRobusto="orange",cAnalitico="green4",cBootstrap="green1",dBootstrap="purple",eAnalitico="blue4",eBootstrap="blue1"),name="",labels=c("b int. robusto","c int. analítico","c int. bootstrap","d int. Bootstrap","e int. analítico","e int. bootstrap"))+
+  theme_minimal()+
+  ggtitle("los intervalos del inciso d parecen ser mejores")
+```
+  
+  Yo reportaría el intervalo analítico del inciso e (que toma valores (`r IC3`)) ya que es el más preciso (pequeño), el que está mejor centrado respecto a la distribución empírica de las diferencias y que toma en cuenta la interacción de $dem$ con otros controles. Es necesario reportar la especificación de la que proviene la predicción:
+```{r, results='asis'}
+equatiomatic::extract_eq(reg_e, wrap=T,use_coefs=T)
+```
+  Así como los errores estándar robustos y el uso del supuesto de normalidad.
+    
+    
